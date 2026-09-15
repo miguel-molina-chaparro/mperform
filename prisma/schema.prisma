@@ -1,0 +1,25 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model DailyEntry {
+  id                 String   @id @default(cuid())
+  fecha              DateTime @unique @db.Date
+  rendimientoTrabajo Float
+  movil17            Boolean
+  movilResto         Boolean
+  np                 Boolean
+  ejercicio          Boolean
+  formacion          Boolean
+  leer               Boolean
+  social             Boolean
+  nf                 Int      @default(1)
+  total              Float
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
