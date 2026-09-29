@@ -10,6 +10,7 @@ import { z } from "zod";
 
 import { eliminarEntradaAction, guardarEntradaAction } from "@/app/actions";
 import { calcularTotal, nfInputAValor } from "@/lib/calculos";
+import { reportarErrorCliente } from "@/lib/reportar-error-cliente";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -222,7 +223,8 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
           return next;
         });
         toast.success("Entrada guardada");
-      } catch {
+      } catch (error) {
+        reportarErrorCliente("accion.guardarEntrada", error, { fecha: selectedKey });
         toast.error("No se pudo contactar con el servidor");
       }
     });
@@ -243,7 +245,8 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
         }
         setEntries((prev) => prev.filter((entry) => entry.fecha !== fecha));
         toast.success("Entrada eliminada");
-      } catch {
+      } catch (error) {
+        reportarErrorCliente("accion.eliminarEntrada", error, { fecha });
         toast.error("No se pudo contactar con el servidor");
       }
     });

@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { connection } from "next/server";
 
+import { log } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { getAppPassword } from "@/lib/session-token";
 
@@ -28,8 +29,10 @@ export async function GET() {
         ? "Faltan las tablas: ejecuta `npx prisma migrate deploy` contra esta base de datos."
         : "No se pudo consultar la base de datos: revisa DATABASE_URL.";
     database = { ok: false, error: `${code}: ${hint}` };
+    log.error("health.bd_fallo", { code, error });
   }
 
   const ok = env.APP_PASSWORD && database.ok;
+  if (!ok) log.warn("health.no_ok", { env, database: database.ok });
   return Response.json({ ok, env, database }, { status: ok ? 200 : 503 });
 }

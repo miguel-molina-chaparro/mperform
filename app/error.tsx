@@ -1,9 +1,11 @@
 "use client";
 
 import { AlertTriangle } from "lucide-react";
+import { useEffect } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { reportarErrorCliente } from "@/lib/reportar-error-cliente";
 
 export default function ErrorPage({
   error,
@@ -12,6 +14,10 @@ export default function ErrorPage({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
+  useEffect(() => {
+    reportarErrorCliente("error_boundary", error);
+  }, [error]);
+
   return (
     <main className="container mx-auto max-w-xl px-4 py-10">
       <Card>

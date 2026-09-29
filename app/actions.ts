@@ -2,6 +2,7 @@
 
 import { Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
@@ -13,6 +14,7 @@ import {
 } from "@/lib/auth-session";
 import { eliminarEntrada, guardarEntrada } from "@/lib/data";
 import type { ImportEntryInput } from "@/lib/importExport";
+import { log, medir, serializarError } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import {
   getAppPassword,
@@ -40,26 +42,51 @@ type GuardarEntradaInput = {
 
 // En produccion Next oculta el mensaje de los errores lanzados en una Server Action,
 // asi que se traducen aqui a un mensaje que el cliente pueda mostrar.
+// Los errores de uso (sesion, validacion) se registran como warn; los de infraestructura como error.
 function mensajeDeError(error: unknown, contexto: string): string {
-  if (error instanceof NoAutorizadoError) return error.message;
+  const evento = `accion.${contexto}.fallo`;
+
+  if (error instanceof NoAutorizadoError) {
+    log.warn(evento, { motivo: "sin_sesion" });
+    return error.message;
+  }
   if (error instanceof z.ZodError) {
+    log.warn(evento, {
+      motivo: "validacion",
+      problemas: error.issues.map((i) => ({ campo: i.path.join("."), mensaje: i.message })),
+    });
     return error.issues[0]?.message ?? "Datos no validos";
   }
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    if (error.code === "P2025") return "La entrada ya no existe.";
+    if (error.code === "P2025") {
+      log.warn(evento, { motivo: "no_existe" });
+      return "La entrada ya no existe.";
+    }
     if (error.code === "P2021") {
-      console.error(`[${contexto}] Falta la tabla: ejecuta "prisma migrate deploy".`, error);
+      log.error(evento, {
+        motivo: "faltan_migraciones",
+        ayuda: "Ejecuta `npx prisma migrate deploy` contra la base de datos de este entorno.",
+        error,
+      });
       return "La base de datos no tiene las tablas creadas (faltan migraciones).";
     }
   }
   if (error instanceof Prisma.PrismaClientInitializationError) {
-    console.error(`[${contexto}] No se pudo conectar a la base de datos.`, error);
+    log.error(evento, { motivo: "sin_conexion_bd", error });
     return "No se pudo conectar a la base de datos.";
   }
-  if (error instanceof Error && error.message === "Fecha invalida") return error.message;
+  if (error instanceof Error && error.message === "Fecha invalida") {
+    log.warn(evento, { motivo: "fecha_invalida" });
+    return error.message;
+  }
 
-  console.error(`[${contexto}]`, error);
+  log.error(evento, { motivo: "inesperado", error });
   return "Error inesperado en el servidor.";
+}
+
+async function ipCliente(): Promise<string | undefined> {
+  const h = await headers();
+  return h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? h.get("x-real-ip") ?? undefined;
 }
 
 function revalidarTodo() {
@@ -75,8 +102,13 @@ export async function loginAction(
 ): Promise<ActionResult> {
   const expected = getAppPassword();
   const secret = getSessionSecret();
+  const ip = await ipCliente();
+
   if (!expected || !secret) {
-    console.error("[login] APP_PASSWORD no esta definida en este entorno.");
+    log.error("login.sin_configuracion", {
+      ip,
+      ayuda: "APP_PASSWORD no llega al servidor: revisa que exista para este entorno y haz Redeploy.",
+    });
     return {
       ok: false,
       message: "El servidor no tiene APP_PASSWORD configurada.",
@@ -84,6 +116,12 @@ export async function loginAction(
   }
 
   if (typeof password !== "string" || !(await textosIguales(password.trim(), expected, secret))) {
+    // La longitud ayuda a detectar comillas o caracteres de mas sin revelar la contraseña.
+    log.warn("login.contrasena_incorrecta", {
+      ip,
+      longitudIntroducida: typeof password === "string" ? password.trim().length : null,
+      longitudEsperada: expected.length,
+    });
     return { ok: false, message: "Contraseña incorrecta." };
   }
 
@@ -93,18 +131,24 @@ export async function loginAction(
     return { ok: false, message: mensajeDeError(error, "login") };
   }
 
-  redirect(rutaSegura(next));
+  const destino = rutaSegura(next);
+  log.info("login.ok", { ip, destino });
+  redirect(destino);
 }
 
 export async function logoutAction() {
   await borrarSesionCookie();
+  log.info("logout.ok", { ip: await ipCliente() });
 }
 
 export async function guardarEntradaAction(input: GuardarEntradaInput) {
   try {
     await requireSession();
-    const entry = await guardarEntrada(input);
+    const entry = await medir("bd.guardarEntrada", () => guardarEntrada(input), {
+      fecha: input.fecha,
+    });
     revalidarTodo();
+    log.info("entrada.guardada", { fecha: input.fecha, total: entry.total });
     return {
       ok: true as const,
       data: { ...entry, fecha: entry.fecha.toISOString() },
@@ -117,8 +161,9 @@ export async function guardarEntradaAction(input: GuardarEntradaInput) {
 export async function eliminarEntradaAction(fecha: string): Promise<ActionResult> {
   try {
     await requireSession();
-    await eliminarEntrada(fecha);
+    await medir("bd.eliminarEntrada", () => eliminarEntrada(fecha), { fecha });
     revalidarTodo();
+    log.info("entrada.eliminada", { fecha });
     return { ok: true, data: undefined };
   } catch (error) {
     return { ok: false, message: mensajeDeError(error, "eliminarEntrada") };
@@ -167,6 +212,8 @@ export async function importarEntradasAction(
     let updated = 0;
     let skippedExisting = 0;
     let invalid = 0;
+    const muestraErrores: Record<string, unknown>[] = [];
+    const inicio = performance.now();
 
     for (const row of parsedRows) {
       try {
@@ -178,12 +225,27 @@ export async function importarEntradasAction(
         await guardarEntrada(row);
         imported += 1;
         if (exists) updated += 1;
-      } catch {
+      } catch (error) {
         invalid += 1;
+        if (muestraErrores.length < 5) {
+          muestraErrores.push({ fecha: row.fecha, error: serializarError(error) });
+        }
       }
     }
 
     revalidarTodo();
+
+    const resumen = {
+      filas: parsedRows.length,
+      imported,
+      updated,
+      skippedExisting,
+      invalid,
+      overwriteExisting,
+      ms: Math.round(performance.now() - inicio),
+    };
+    if (invalid > 0) log.warn("importacion.con_errores", { ...resumen, muestraErrores });
+    else log.info("importacion.ok", resumen);
 
     return {
       ok: true,

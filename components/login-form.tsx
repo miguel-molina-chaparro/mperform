@@ -8,6 +8,7 @@ import { loginAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { reportarErrorCliente } from "@/lib/reportar-error-cliente";
 
 export function LoginForm({ next }: { next?: string }) {
   const [password, setPassword] = useState("");
@@ -28,6 +29,7 @@ export function LoginForm({ next }: { next?: string }) {
         }
       } catch (err) {
         unstable_rethrow(err);
+        reportarErrorCliente("accion.login", err);
         const message = "No se pudo contactar con el servidor. Inténtalo de nuevo.";
         setError(message);
         toast.error(message);

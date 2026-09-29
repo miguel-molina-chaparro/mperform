@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import { toast } from "sonner";
 
 import { importarEntradasAction } from "@/app/actions";
+import { reportarErrorCliente } from "@/lib/reportar-error-cliente";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -101,7 +102,7 @@ export function ImportExportDashboard({ entries }: { entries: Entry[] }) {
         `Archivo leido: ${result.validRows.length} filas validas, ${result.invalidCount} invalidas`,
       );
     } catch (error) {
-      console.error(error);
+      reportarErrorCliente("importacion.leer_excel", error, { archivo: file.name });
       toast.error("Error leyendo archivo Excel");
     }
   };
@@ -122,7 +123,9 @@ export function ImportExportDashboard({ entries }: { entries: Entry[] }) {
       toast.success("Importación completada");
       router.refresh();
     } catch (error) {
-      console.error(error);
+      reportarErrorCliente("accion.importarEntradas", error, {
+        filas: parseResult.validRows.length,
+      });
       toast.error("No se pudo completar la importación");
     } finally {
       setImporting(false);

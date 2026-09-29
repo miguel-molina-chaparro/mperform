@@ -70,3 +70,26 @@ npx prisma migrate deploy
 `GET /api/health` es publico y devuelve, sin exponer valores, si `APP_PASSWORD`,
 `APP_SESSION_SECRET` y `DATABASE_URL` estan definidas y si la base de datos responde.
 Si indica `P2021`, faltan las migraciones.
+
+### Logs en Vercel
+
+El servidor escribe una linea JSON por evento (`{"nivel","evento",...,"entorno","ts"}`).
+Consultalos en `Vercel > proyecto > Logs` (o `Deployments > deploy > Runtime Logs`)
+y busca por el nombre del evento, por ejemplo `login.contrasena_incorrecta`.
+
+| Evento | Nivel | Significado |
+| --- | --- | --- |
+| `servidor.arranque` | info | Arranque de una instancia; indica que variables estan definidas |
+| `config.falta_*` | error | Falta `APP_PASSWORD` o `DATABASE_URL` en el entorno |
+| `login.sin_configuracion` | error | Se intento entrar sin `APP_PASSWORD` configurada |
+| `login.contrasena_incorrecta` | warn | Password incorrecta (solo longitudes, nunca el valor) |
+| `login.ok` / `logout.ok` | info | Inicio y cierre de sesion |
+| `auth.sin_secreto` / `auth.cookie_invalida` | error / warn | El proxy rechazo la sesion |
+| `accion.<nombre>.fallo` | warn / error | Fallo en una server action (`faltan_migraciones`, `sin_conexion_bd`, ...) |
+| `entrada.*`, `importacion.*` | info / warn | Guardado, borrado e importacion de registros |
+| `*.lento` | warn | Consulta a BD de 1 s o mas |
+| `request.error` | error | Error no controlado en render, ruta, accion o proxy |
+| `cliente.error` | error | Error de JavaScript en el navegador |
+| `health.*` | warn / error | `/api/health` detecto un problema |
+
+Para ver tambien los eventos `debug` define `LOG_LEVEL=debug` en Vercel y haz Redeploy.

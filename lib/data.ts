@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { calcularTotal, nfInputAValor } from "@/lib/calculos";
 import { normalizarFechaAUTC } from "@/lib/fechas";
+import { medir } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 
 const fechaSchema = z.union([z.string(), z.date()]);
@@ -36,11 +37,13 @@ export async function obtenerEntradas() {
   // Sin esto las paginas se prerenderizan en el build y los datos quedan congelados.
   await connection();
 
-  return prisma.dailyEntry.findMany({
-    orderBy: {
-      fecha: "desc",
-    },
-  });
+  return medir("bd.obtenerEntradas", () =>
+    prisma.dailyEntry.findMany({
+      orderBy: {
+        fecha: "desc",
+      },
+    }),
+  );
 }
 
 export async function obtenerEntradaPorFecha(fecha: string | Date) {

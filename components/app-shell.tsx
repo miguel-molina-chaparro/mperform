@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { logoutAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
+import { reportarErrorCliente } from "@/lib/reportar-error-cliente";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
@@ -36,7 +37,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         await logoutAction();
         router.replace("/login");
         router.refresh();
-      } catch {
+      } catch (error) {
+        reportarErrorCliente("accion.logout", error);
         toast.error("No se pudo cerrar sesión");
       }
     });
