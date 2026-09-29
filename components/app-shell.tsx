@@ -35,8 +35,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       try {
         await logoutAction();
         router.replace("/login");
+        router.refresh();
       } catch {
-        toast.error("No se pudo cerrar sesion");
+        toast.error("No se pudo cerrar sesión");
       }
     });
   };

@@ -2,14 +2,15 @@ import { redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/login-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { verifySignedToken, SESSION_COOKIE_NAME } from "@/lib/auth-session";
-import { cookies } from "next/headers";
+import { haySesionValida } from "@/lib/auth-session";
+import { rutaSegura } from "@/lib/session-token";
 
-export default async function LoginPage() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-  if (token && (await verifySignedToken(token))) {
-    redirect("/");
+export default async function LoginPage({ searchParams }: PageProps<"/login">) {
+  const { next } = await searchParams;
+  const destino = rutaSegura(Array.isArray(next) ? next[0] : next);
+
+  if (await haySesionValida()) {
+    redirect(destino);
   }
 
   return (
@@ -19,7 +20,7 @@ export default async function LoginPage() {
           <CardTitle>Iniciar sesión</CardTitle>
         </CardHeader>
         <CardContent>
-          <LoginForm />
+          <LoginForm next={destino} />
         </CardContent>
       </Card>
     </main>

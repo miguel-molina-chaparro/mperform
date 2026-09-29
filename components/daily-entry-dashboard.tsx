@@ -64,7 +64,14 @@ type Props = {
 };
 
 const formSchema = z.object({
-  rendimientoTrabajo: z.number().min(0).max(24),
+  rendimientoTrabajo: z
+    .number({ error: "Introduce un número" })
+    .min(0, "Mínimo 0")
+    .max(24, "Máximo 24")
+    .refine(
+      (value) => Math.abs(value * 10 - Math.round(value * 10)) < 1e-9,
+      "Como máximo 1 decimal",
+    ),
   movil17: z.boolean(),
   movilResto: z.boolean(),
   np: z.boolean(),
@@ -72,7 +79,10 @@ const formSchema = z.object({
   formacion: z.boolean(),
   leer: z.boolean(),
   social: z.boolean(),
-  nf: z.number().int().min(0),
+  nf: z
+    .number({ error: "Introduce un número" })
+    .int("Debe ser un número entero")
+    .min(0, "Debe ser 0 o mayor"),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -157,21 +167,24 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
   }, [form, selectedEntry]);
 
   const watched = useWatch({ control: form.control });
-  const totalEnVivo = useMemo(
-    () =>
-      calcularTotal({
-        rendimientoTrabajo: watched.rendimientoTrabajo ?? 0,
-        movil17: watched.movil17 ?? false,
-        movilResto: watched.movilResto ?? false,
-        np: watched.np ?? false,
-        ejercicio: watched.ejercicio ?? false,
-        formacion: watched.formacion ?? false,
-        leer: watched.leer ?? false,
-        social: watched.social ?? false,
-        nfValor: nfInputAValor(watched.nf ?? 1),
-      }),
-    [watched],
-  );
+  const totalEnVivo = useMemo(() => {
+    const nf = watched.nf ?? 1;
+    const rendimiento = watched.rendimientoTrabajo ?? 0;
+    // Mientras se escribe, N.F puede ser negativo o decimal y nfInputAValor lanzaria.
+    if (!Number.isInteger(nf) || nf < 0 || !Number.isFinite(rendimiento)) return null;
+
+    return calcularTotal({
+      rendimientoTrabajo: rendimiento,
+      movil17: watched.movil17 ?? false,
+      movilResto: watched.movilResto ?? false,
+      np: watched.np ?? false,
+      ejercicio: watched.ejercicio ?? false,
+      formacion: watched.formacion ?? false,
+      leer: watched.leer ?? false,
+      social: watched.social ?? false,
+      nfValor: nfInputAValor(nf),
+    });
+  }, [watched]);
 
   const filteredEntries = useMemo(() => {
     return entries.filter((entry) => {
@@ -192,22 +205,25 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
   const onSubmit = (values: FormValues) => {
     startTransition(async () => {
       try {
-        const saved = await guardarEntradaAction({
+        const result = await guardarEntradaAction({
           fecha: selectedKey,
           ...values,
         });
+        if (!result.ok) {
+          toast.error(result.message);
+          return;
+        }
 
+        const saved = result.data;
         setEntries((prev) => {
           const next = prev.filter((entry) => entry.fecha !== saved.fecha);
-          next.push(saved as EntryRow);
+          next.push(saved);
           next.sort((a, b) => b.fecha.localeCompare(a.fecha));
           return next;
         });
         toast.success("Entrada guardada");
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "No se pudo guardar";
-        toast.error(message);
+      } catch {
+        toast.error("No se pudo contactar con el servidor");
       }
     });
   };
@@ -220,11 +236,15 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
   const eliminarEntradaUI = (fecha: string) => {
     startTransition(async () => {
       try {
-        await eliminarEntradaAction(fecha.slice(0, 10));
+        const result = await eliminarEntradaAction(fecha.slice(0, 10));
+        if (!result.ok) {
+          toast.error(result.message);
+          return;
+        }
         setEntries((prev) => prev.filter((entry) => entry.fecha !== fecha));
         toast.success("Entrada eliminada");
       } catch {
-        toast.error("No se pudo eliminar la entrada");
+        toast.error("No se pudo contactar con el servidor");
       }
     });
   };
@@ -356,9 +376,13 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
               <CardTitle>Total en vivo</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold">{totalEnVivo.toFixed(6)}</p>
+              <p className="text-3xl font-bold">
+                {totalEnVivo === null ? "—" : totalEnVivo.toFixed(6)}
+              </p>
               <p className="text-sm text-muted-foreground">
-                Recalculado según los valores del formulario.
+                {totalEnVivo === null
+                  ? "Revisa N.F: debe ser un entero mayor o igual que 0."
+                  : "Recalculado según los valores del formulario."}
               </p>
             </CardContent>
           </Card>

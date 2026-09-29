@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -40,9 +41,11 @@ export function ImportExportDashboard({ entries }: { entries: Entry[] }) {
   } | null>(null);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [importing, setImporting] = useState(false);
+  const router = useRouter();
 
   const existingDateSet = useMemo(
-    () => new Set(entries.map((entry) => format(new Date(entry.fecha), "yyyy-MM-dd"))),
+    () => new Set(entries.map((entry) => String(entry.fecha).slice(0, 10))),
     [entries],
   );
 
@@ -58,7 +61,7 @@ export function ImportExportDashboard({ entries }: { entries: Entry[] }) {
 
   const filteredExportEntries = useMemo(() => {
     return entries.filter((entry) => {
-      const key = format(new Date(entry.fecha), "yyyy-MM-dd");
+      const key = String(entry.fecha).slice(0, 10);
       if (fromDate && key < fromDate) return false;
       if (toDate && key > toDate) return false;
       return true;
@@ -105,16 +108,24 @@ export function ImportExportDashboard({ entries }: { entries: Entry[] }) {
 
   const confirmarImportacion = async () => {
     if (!parseResult || parseResult.validRows.length === 0) return;
+    setImporting(true);
     try {
       const result = await importarEntradasAction(
         parseResult.validRows,
         overwriteExisting,
       );
-      setImportSummary(result);
-      toast.success("Importacion completada");
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      setImportSummary(result.data);
+      toast.success("Importación completada");
+      router.refresh();
     } catch (error) {
       console.error(error);
-      toast.error("No se pudo completar la importacion");
+      toast.error("No se pudo completar la importación");
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -174,9 +185,9 @@ export function ImportExportDashboard({ entries }: { entries: Entry[] }) {
                 </div>
                 <Button
                   onClick={confirmarImportacion}
-                  disabled={parseResult.validRows.length === 0}
+                  disabled={parseResult.validRows.length === 0 || importing}
                 >
-                  Confirmar importacion
+                  {importing ? "Importando..." : "Confirmar importación"}
                 </Button>
               </div>
             ) : null}

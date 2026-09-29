@@ -1,14 +1,15 @@
-"use server";
+import "server-only";
 
-import { isValid, parseISO } from "date-fns";
+import { connection } from "next/server";
 import { z } from "zod";
 
 import { calcularTotal, nfInputAValor } from "@/lib/calculos";
+import { normalizarFechaAUTC } from "@/lib/fechas";
 import { prisma } from "@/lib/prisma";
 
 const fechaSchema = z.union([z.string(), z.date()]);
 
-const entradaSchema = z
+export const entradaSchema = z
   .object({
     fecha: fechaSchema,
     rendimientoTrabajo: z
@@ -16,8 +17,9 @@ const entradaSchema = z
       .min(0)
       .max(24)
       .refine(
-        (value) => Number.isInteger(value * 10),
-        "rendimientoTrabajo debe tener como maximo 1 decimal",
+        // Tolerancia para valores calculados en Excel (0.1 + 0.2 = 0.30000000000000004).
+        (value) => Math.abs(value * 10 - Math.round(value * 10)) < 1e-9,
+        "Rendimiento Trabajo admite como maximo 1 decimal",
       ),
     movil17: z.boolean(),
     movilResto: z.boolean(),
@@ -30,37 +32,21 @@ const entradaSchema = z
   })
   .strict();
 
-function normalizarFechaAUTC(fecha: string | Date): Date {
-  const date = typeof fecha === "string" ? parseISO(fecha) : fecha;
-
-  if (!isValid(date)) {
-    throw new Error("Fecha invalida");
-  }
-
-  return new Date(
-    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-  );
-}
-
 export async function obtenerEntradas() {
-  try {
-    return await prisma.dailyEntry.findMany({
-      orderBy: {
-        fecha: "desc",
-      },
-    });
-  } catch (error) {
-    console.error("No se pudieron cargar entradas:", error);
-    return [];
-  }
+  // Sin esto las paginas se prerenderizan en el build y los datos quedan congelados.
+  await connection();
+
+  return prisma.dailyEntry.findMany({
+    orderBy: {
+      fecha: "desc",
+    },
+  });
 }
 
 export async function obtenerEntradaPorFecha(fecha: string | Date) {
-  const fechaNormalizada = normalizarFechaAUTC(fecha);
-
   return prisma.dailyEntry.findUnique({
     where: {
-      fecha: fechaNormalizada,
+      fecha: normalizarFechaAUTC(fecha),
     },
   });
 }
@@ -68,9 +54,8 @@ export async function obtenerEntradaPorFecha(fecha: string | Date) {
 export async function guardarEntrada(datos: z.input<typeof entradaSchema>) {
   const parsed = entradaSchema.parse(datos);
   const fechaNormalizada = normalizarFechaAUTC(parsed.fecha);
-  const nfValor = nfInputAValor(parsed.nf);
 
-  const total = calcularTotal({
+  const valores = {
     rendimientoTrabajo: parsed.rendimientoTrabajo,
     movil17: parsed.movil17,
     movilResto: parsed.movilResto,
@@ -79,47 +64,23 @@ export async function guardarEntrada(datos: z.input<typeof entradaSchema>) {
     formacion: parsed.formacion,
     leer: parsed.leer,
     social: parsed.social,
-    nfValor,
-  });
+    nf: parsed.nf,
+    total: calcularTotal({ ...parsed, nfValor: nfInputAValor(parsed.nf) }),
+  };
 
   return prisma.dailyEntry.upsert({
     where: {
       fecha: fechaNormalizada,
     },
-    update: {
-      rendimientoTrabajo: parsed.rendimientoTrabajo,
-      movil17: parsed.movil17,
-      movilResto: parsed.movilResto,
-      np: parsed.np,
-      ejercicio: parsed.ejercicio,
-      formacion: parsed.formacion,
-      leer: parsed.leer,
-      social: parsed.social,
-      nf: parsed.nf,
-      total,
-    },
-    create: {
-      fecha: fechaNormalizada,
-      rendimientoTrabajo: parsed.rendimientoTrabajo,
-      movil17: parsed.movil17,
-      movilResto: parsed.movilResto,
-      np: parsed.np,
-      ejercicio: parsed.ejercicio,
-      formacion: parsed.formacion,
-      leer: parsed.leer,
-      social: parsed.social,
-      nf: parsed.nf,
-      total,
-    },
+    update: valores,
+    create: { fecha: fechaNormalizada, ...valores },
   });
 }
 
 export async function eliminarEntrada(fecha: string | Date) {
-  const fechaNormalizada = normalizarFechaAUTC(fecha);
-
   return prisma.dailyEntry.delete({
     where: {
-      fecha: fechaNormalizada,
+      fecha: normalizarFechaAUTC(fecha),
     },
   });
 }

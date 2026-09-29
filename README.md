@@ -19,7 +19,7 @@ Variables necesarias:
 
 - `DATABASE_URL`: cadena de conexion PostgreSQL (Vercel Postgres/Neon).
 - `APP_PASSWORD`: password unica para autenticacion simple de la app.
-- `APP_SESSION_SECRET` (recomendada): clave para firmar la cookie de sesion.
+- `APP_SESSION_SECRET` (opcional): clave para firmar la cookie de sesion. Si no existe o esta vacia se usa `APP_PASSWORD`. Cambiarla cierra todas las sesiones abiertas.
 
 ## Desarrollo local
 
@@ -52,7 +52,21 @@ npx prisma migrate deploy
    - `DATABASE_URL` (la proporcionada por Vercel Postgres).
    - `APP_PASSWORD` (la clave de acceso a la app).
    - `APP_SESSION_SECRET` (secreto largo para firma de sesion).
-4. Lanza un deploy.
-5. Ejecuta migraciones en produccion con:
-   - `vercel env pull .env.production` (opcional para correr localmente contra prod).
-   - `npx prisma migrate deploy` usando la `DATABASE_URL` de produccion.
+   Marca cada variable para el entorno **Production** (y Preview si lo usas). Pega los
+   valores sin comillas: en Vercel las comillas forman parte del valor.
+4. Lanza un deploy. Las variables nuevas o modificadas solo se aplican en un deploy
+   posterior, asi que tras cambiarlas usa **Redeploy**.
+5. Crea las tablas en la base de datos de produccion (una vez, y tras cada migracion nueva):
+
+   ```bash
+   DATABASE_URL="<url de produccion>" npx prisma migrate deploy
+   ```
+
+   Con Neon/Vercel Postgres usa la URL **sin pooling** (`DATABASE_URL_UNPOOLED` o
+   `POSTGRES_URL_NON_POOLING`) para las migraciones.
+
+## Diagnostico
+
+`GET /api/health` es publico y devuelve, sin exponer valores, si `APP_PASSWORD`,
+`APP_SESSION_SECRET` y `DATABASE_URL` estan definidas y si la base de datos responde.
+Si indica `P2021`, faltan las migraciones.
