@@ -56,7 +56,10 @@ npx prisma migrate deploy
    valores sin comillas: en Vercel las comillas forman parte del valor.
 4. Lanza un deploy. Las variables nuevas o modificadas solo se aplican en un deploy
    posterior, asi que tras cambiarlas usa **Redeploy**.
-5. Crea las tablas en la base de datos de produccion (una vez, y tras cada migracion nueva):
+5. Las tablas se crean solas: en Vercel se ejecuta el script `vercel-build`
+   (`prisma migrate deploy && next build`), que aplica las migraciones pendientes
+   contra `DATABASE_URL` antes de compilar. Si falla, el deploy falla y el error
+   aparece en el log de build. Para aplicarlas a mano desde tu equipo:
 
    ```bash
    DATABASE_URL="<url de produccion>" npx prisma migrate deploy
