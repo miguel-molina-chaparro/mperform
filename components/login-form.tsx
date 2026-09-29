@@ -59,7 +59,7 @@ export function LoginForm({ next }: { next?: string }) {
           </p>
         ) : null}
       </div>
-      <Button type="submit" className="w-full" disabled={pending || !password}>
+      <Button type="submit" size="lg" className="h-10 w-full" disabled={pending || !password}>
         {pending ? "Entrando..." : "Entrar"}
       </Button>
     </form>

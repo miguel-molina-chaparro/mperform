@@ -1,9 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type CSSProperties,
+} from "react";
 import { format } from "date-fns";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CalendarIcon, Pencil, Trash2 } from "lucide-react";
+import {
+  Briefcase,
+  CalendarDays,
+  CalendarIcon,
+  Flame,
+  History,
+  Pencil,
+  Save,
+  Trash2,
+} from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -11,7 +27,9 @@ import { z } from "zod";
 import { eliminarEntradaAction, guardarEntradaAction } from "@/app/actions";
 import { calcularTotal, nfInputAValor } from "@/lib/calculos";
 import { reportarErrorCliente } from "@/lib/reportar-error-cliente";
-import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { HABITOS, type HabitoMeta } from "@/components/habitos";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -100,16 +118,6 @@ const DEFAULT_VALUES: FormValues = {
   nf: 1,
 };
 
-const SWITCH_FIELDS: Array<{ key: keyof FormValues; label: string }> = [
-  { key: "movil17", label: "Móvil - 17 horas" },
-  { key: "movilResto", label: "Móvil resto de día" },
-  { key: "np", label: "N. P" },
-  { key: "ejercicio", label: "Ejercicio" },
-  { key: "formacion", label: "Formación" },
-  { key: "leer", label: "Leer" },
-  { key: "social", label: "Social" },
-];
-
 function toDateKey(date: Date) {
   return format(date, "yyyy-MM-dd");
 }
@@ -137,10 +145,29 @@ function entryToFormValues(entry: EntryRow): FormValues {
   };
 }
 
-function BoolBadge({ value }: { value: boolean }) {
+function HabitoDot({ habito, value }: { habito: HabitoMeta; value: boolean }) {
+  const Icon = habito.icon;
   return (
-    <Badge variant={value ? "default" : "secondary"}>{value ? "✓" : "✗"}</Badge>
+    <span
+      title={`${habito.label}: ${value ? "cumplido" : "no cumplido"}`}
+      style={{ "--habit": habito.color } as CSSProperties}
+      className={cn(
+        "inline-grid size-7 place-items-center rounded-lg transition-colors",
+        value
+          ? "bg-[var(--habit)] text-white shadow-[0_4px_10px_-4px_var(--habit)]"
+          : "bg-muted text-muted-foreground/40",
+      )}
+    >
+      <Icon className="size-3.5" />
+    </span>
   );
+}
+
+function tonoTotal(total: number, media: number) {
+  if (media <= 0) return "bg-muted text-foreground";
+  if (total >= media * 1.1) return "bg-success/15 text-success";
+  if (total <= media * 0.9) return "bg-destructive/12 text-destructive";
+  return "bg-warning/18 text-[color-mix(in_oklch,var(--warning),black_35%)] dark:text-warning";
 }
 
 export function DailyEntryDashboard({ initialEntries }: Props) {
@@ -186,6 +213,16 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
       nfValor: nfInputAValor(nf),
     });
   }, [watched]);
+
+  const habitosCumplidos = HABITOS.filter((habito) => Boolean(watched[habito.key])).length;
+
+  const mediaTotal = useMemo(
+    () =>
+      entries.length === 0
+        ? 0
+        : entries.reduce((suma, entry) => suma + entry.total, 0) / entries.length,
+    [entries],
+  );
 
   const filteredEntries = useMemo(() => {
     return entries.filter((entry) => {
@@ -253,34 +290,46 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
   };
 
   return (
-    <main className="container mx-auto max-w-7xl space-y-8 px-4 py-6 md:px-6">
-      <section ref={formSectionRef} className="space-y-4">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Seguimiento diario de rendimiento
-        </h1>
+    <main className="container mx-auto max-w-7xl space-y-8 px-4 py-8 md:px-6">
+      <section ref={formSectionRef} className="scroll-mt-24 space-y-6">
+        <PageHeader
+          icon={Flame}
+          title="Seguimiento diario"
+          description="Registra tu día y mira cómo cambia tu total al instante."
+        />
 
-        <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
+        <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
           <Card>
             <CardHeader>
-              <CardTitle>Registro / Edición diaria</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                {selectedEntry ? "Editar registro" : "Nuevo registro"}
+                {selectedEntry ? (
+                  <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
+                    Ya existe
+                  </span>
+                ) : null}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                   <div className="grid gap-4 md:grid-cols-2">
                     <FormItem>
-                      <FormLabel>Fecha</FormLabel>
+                      <FormLabel className="flex items-center gap-1.5">
+                        <CalendarDays className="size-3.5 text-brand" />
+                        Fecha
+                      </FormLabel>
                       <Popover>
                         <PopoverTrigger
                           render={
                             <Button
                               type="button"
                               variant="outline"
-                              className="w-full justify-start text-left font-normal"
+                              className="h-10 w-full justify-start text-left font-normal"
                             />
                           }
                         >
-                          <CalendarIcon className="mr-2 size-4" />
+                          <CalendarIcon className="mr-2 size-4 text-brand" />
                           {format(selectedDate, "dd/MM/yyyy")}
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0" align="start">
@@ -300,13 +349,17 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
                       name="rendimientoTrabajo"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Rendimiento Trabajo</FormLabel>
+                          <FormLabel className="flex items-center gap-1.5">
+                            <Briefcase className="size-3.5 text-brand" />
+                            Rendimiento Trabajo
+                          </FormLabel>
                           <FormControl>
                             <Input
                               type="number"
                               min={0}
                               max={24}
                               step="0.1"
+                              className="h-10 tabular-nums"
                               value={field.value}
                               onChange={(event) =>
                                 field.onChange(Number(event.target.value))
@@ -319,38 +372,73 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
                     />
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {SWITCH_FIELDS.map((item) => (
-                      <FormField
-                        key={item.key}
-                        control={form.control}
-                        name={item.key}
-                        render={({ field }) => (
-                          <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                            <FormLabel>{item.label}</FormLabel>
-                            <FormControl>
-                              <Switch
-                                checked={Boolean(field.value)}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                    ))}
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium">Hábitos</p>
+                    <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                      {HABITOS.map((habito) => {
+                        const Icon = habito.icon;
+                        return (
+                          <FormField
+                            key={habito.key}
+                            control={form.control}
+                            name={habito.key}
+                            render={({ field }) => {
+                              const activo = Boolean(field.value);
+                              return (
+                                <FormItem
+                                  style={{ "--habit": habito.color } as CSSProperties}
+                                  className={cn(
+                                    "flex cursor-pointer flex-row items-center gap-3 rounded-xl border p-3 transition-all",
+                                    activo
+                                      ? "border-[color-mix(in_oklch,var(--habit),transparent_45%)] bg-[color-mix(in_oklch,var(--habit),transparent_88%)]"
+                                      : "hover:border-[color-mix(in_oklch,var(--habit),transparent_60%)]",
+                                  )}
+                                  onClick={() => field.onChange(!activo)}
+                                >
+                                  <span
+                                    className={cn(
+                                      "grid size-9 shrink-0 place-items-center rounded-lg transition-colors",
+                                      activo
+                                        ? "bg-[var(--habit)] text-white shadow-[0_6px_14px_-6px_var(--habit)]"
+                                        : "bg-muted text-muted-foreground",
+                                    )}
+                                  >
+                                    <Icon className="size-4" />
+                                  </span>
+                                  <FormLabel
+                                    className="flex-1 cursor-pointer"
+                                    onClick={(event) => event.stopPropagation()}
+                                  >
+                                    {habito.label}
+                                  </FormLabel>
+                                  <FormControl>
+                                    <Switch
+                                      checked={activo}
+                                      onClick={(event) => event.stopPropagation()}
+                                      onCheckedChange={field.onChange}
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              );
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
 
                   <FormField
                     control={form.control}
                     name="nf"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem className="max-w-xs">
                         <FormLabel>N.F</FormLabel>
                         <FormControl>
                           <Input
                             type="number"
                             min={0}
                             step={1}
+                            className="h-10 tabular-nums"
                             value={field.value}
                             onChange={(event) =>
                               field.onChange(Number(event.target.value))
@@ -366,7 +454,8 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
                     )}
                   />
 
-                  <Button type="submit" disabled={isPending}>
+                  <Button type="submit" size="lg" className="h-10 px-5" disabled={isPending}>
+                    <Save className="size-4" />
                     {isPending ? "Guardando..." : "Guardar"}
                   </Button>
                 </form>
@@ -374,113 +463,140 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
             </CardContent>
           </Card>
 
-          <Card className="h-fit">
-            <CardHeader>
-              <CardTitle>Total en vivo</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">
-                {totalEnVivo === null ? "—" : totalEnVivo.toFixed(6)}
+          <div className="space-y-5 lg:sticky lg:top-24 lg:h-fit">
+            <div className="bg-brand-gradient relative overflow-hidden rounded-2xl p-6 text-white shadow-[0_20px_40px_-20px_var(--brand)]">
+              <div className="pointer-events-none absolute -top-16 -right-16 size-48 rounded-full bg-white/15 blur-2xl" />
+              <div className="pointer-events-none absolute -bottom-20 -left-10 size-44 rounded-full bg-white/10 blur-2xl" />
+              <p className="relative text-sm font-medium text-white/80">Total en vivo</p>
+              <p className="relative mt-2 font-heading text-5xl font-bold tabular-nums">
+                {totalEnVivo === null ? "—" : totalEnVivo.toFixed(2)}
               </p>
-              <p className="text-sm text-muted-foreground">
+              <p className="relative mt-2 text-sm text-white/80">
                 {totalEnVivo === null
                   ? "Revisa N.F: debe ser un entero mayor o igual que 0."
-                  : "Recalculado según los valores del formulario."}
+                  : mediaTotal > 0
+                    ? `Tu media histórica es ${mediaTotal.toFixed(2)}`
+                    : "Se recalcula con cada cambio del formulario."}
               </p>
-            </CardContent>
-          </Card>
+            </div>
+
+            <Card>
+              <CardContent className="space-y-3">
+                <div className="flex items-baseline justify-between">
+                  <p className="text-sm font-medium">Hábitos cumplidos</p>
+                  <p className="font-heading text-2xl font-bold tabular-nums">
+                    {habitosCumplidos}
+                    <span className="text-base text-muted-foreground">/{HABITOS.length}</span>
+                  </p>
+                </div>
+                <div className="flex gap-1.5">
+                  {HABITOS.map((habito) => (
+                    <span
+                      key={habito.key}
+                      title={habito.label}
+                      className="h-2 flex-1 rounded-full bg-muted transition-colors"
+                      style={
+                        watched[habito.key] ? { backgroundColor: habito.color } : undefined
+                      }
+                    />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </section>
 
       <section className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="grid gap-2">
-            <label className="text-sm font-medium">Desde</label>
-            <Input
-              type="date"
-              value={fromDate}
-              onChange={(event) => {
-                setFromDate(event.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
-          <div className="grid gap-2">
-            <label className="text-sm font-medium">Hasta</label>
-            <Input
-              type="date"
-              value={toDate}
-              onChange={(event) => {
-                setToDate(event.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
-        </div>
-
         <Card>
-          <CardHeader>
-            <CardTitle>Histórico</CardTitle>
+          <CardHeader className="gap-4 sm:flex sm:items-end sm:justify-between">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <History className="size-5 text-brand" />
+              Histórico
+            </CardTitle>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="grid gap-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Desde</label>
+                <Input
+                  type="date"
+                  value={fromDate}
+                  onChange={(event) => {
+                    setFromDate(event.target.value);
+                    setPage(1);
+                  }}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Hasta</label>
+                <Input
+                  type="date"
+                  value={toDate}
+                  onChange={(event) => {
+                    setToDate(event.target.value);
+                    setPage(1);
+                  }}
+                />
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="max-h-[520px] overflow-auto">
-              <Table className="min-w-[980px]">
-                <TableHeader>
+            <div className="max-h-[560px] overflow-auto rounded-xl border">
+              <Table className="min-w-[900px]">
+                <TableHeader className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
                   <TableRow>
                     <TableHead>Fecha</TableHead>
-                    <TableHead>Rendimiento Trabajo</TableHead>
-                    <TableHead>Móvil-17h</TableHead>
-                    <TableHead>Móvil Resto</TableHead>
-                    <TableHead>N.F</TableHead>
-                    <TableHead>N.P</TableHead>
-                    <TableHead>Ejercicio</TableHead>
-                    <TableHead>Formación</TableHead>
-                    <TableHead>Leer</TableHead>
-                    <TableHead>Social</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead>Acciones</TableHead>
+                    <TableHead>Rendimiento</TableHead>
+                    {HABITOS.map((habito) => (
+                      <TableHead key={habito.key} className="text-center">
+                        {habito.corto}
+                      </TableHead>
+                    ))}
+                    <TableHead className="text-center">N.F</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {visibleEntries.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={12} className="py-6 text-center text-muted-foreground">
+                      <TableCell
+                        colSpan={HABITOS.length + 5}
+                        className="py-10 text-center text-muted-foreground"
+                      >
                         Todavía no hay entradas en este rango de fechas.
                       </TableCell>
                     </TableRow>
                   ) : (
                     visibleEntries.map((entry) => (
                       <TableRow key={entry.id}>
-                        <TableCell>{formatDateKey(entry.fecha.slice(0, 10))}</TableCell>
-                        <TableCell>{entry.rendimientoTrabajo.toFixed(1)}</TableCell>
-                        <TableCell>
-                          <BoolBadge value={entry.movil17} />
+                        <TableCell className="font-medium tabular-nums">
+                          {formatDateKey(entry.fecha.slice(0, 10))}
+                        </TableCell>
+                        <TableCell className="tabular-nums">
+                          {entry.rendimientoTrabajo.toFixed(1)}
+                        </TableCell>
+                        {HABITOS.map((habito) => (
+                          <TableCell key={habito.key} className="text-center">
+                            <HabitoDot habito={habito} value={entry[habito.key]} />
+                          </TableCell>
+                        ))}
+                        <TableCell className="text-center tabular-nums">{entry.nf}</TableCell>
+                        <TableCell className="text-right">
+                          <span
+                            className={cn(
+                              "inline-block rounded-lg px-2.5 py-1 font-semibold tabular-nums",
+                              tonoTotal(entry.total, mediaTotal),
+                            )}
+                          >
+                            {entry.total.toFixed(2)}
+                          </span>
                         </TableCell>
                         <TableCell>
-                          <BoolBadge value={entry.movilResto} />
-                        </TableCell>
-                        <TableCell>{entry.nf}</TableCell>
-                        <TableCell>
-                          <BoolBadge value={entry.np} />
-                        </TableCell>
-                        <TableCell>
-                          <BoolBadge value={entry.ejercicio} />
-                        </TableCell>
-                        <TableCell>
-                          <BoolBadge value={entry.formacion} />
-                        </TableCell>
-                        <TableCell>
-                          <BoolBadge value={entry.leer} />
-                        </TableCell>
-                        <TableCell>
-                          <BoolBadge value={entry.social} />
-                        </TableCell>
-                        <TableCell>{entry.total.toFixed(6)}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
+                          <div className="flex justify-end gap-1">
                             <Button
                               size="icon-sm"
-                              variant="outline"
+                              variant="ghost"
+                              aria-label="Editar"
                               onClick={() => editarEntrada(entry)}
                             >
                               <Pencil className="size-4" />
@@ -489,7 +605,11 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
                             <Dialog>
                               <DialogTrigger
                                 render={
-                                  <Button size="icon-sm" variant="destructive" />
+                                  <Button
+                                    size="icon-sm"
+                                    variant="destructive"
+                                    aria-label="Eliminar"
+                                  />
                                 }
                               >
                                 <Trash2 className="size-4" />
@@ -498,7 +618,9 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
                                 <DialogHeader>
                                   <DialogTitle>Eliminar entrada</DialogTitle>
                                   <DialogDescription>
-                                    Esta accion no se puede deshacer.
+                                    Se borrará el registro del{" "}
+                                    {formatDateKey(entry.fecha.slice(0, 10))}. Esta acción
+                                    no se puede deshacer.
                                   </DialogDescription>
                                 </DialogHeader>
                                 <DialogFooter>
@@ -523,7 +645,7 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
 
             <div className="flex items-center justify-between">
               <p className="text-sm text-muted-foreground">
-                {filteredEntries.length} registros
+                {filteredEntries.length} registros · página {page} de {totalPages}
               </p>
               <div className="flex gap-2">
                 <Button

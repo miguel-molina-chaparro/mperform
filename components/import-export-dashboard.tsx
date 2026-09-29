@@ -1,13 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { format } from "date-fns";
+import { CheckCircle2, Download, FileSpreadsheet, Upload } from "lucide-react";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 
 import { importarEntradasAction } from "@/app/actions";
 import { reportarErrorCliente } from "@/lib/reportar-error-cliente";
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,13 +24,29 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  EXCEL_HEADERS,
   entriesToExcelRows,
   parseExcelRowsToEntries,
+  validarCabeceras,
   type ExportEntry,
   type ImportParseResult,
 } from "@/lib/importExport";
 
 type Entry = ExportEntry & { id: string; total: number };
+
+function Cifra({ label, valor, color }: { label: string; valor: number; color: string }) {
+  return (
+    <div
+      style={{ "--cifra": color } as CSSProperties}
+      className="rounded-xl bg-[color-mix(in_oklch,var(--cifra),transparent_88%)] p-3"
+    >
+      <p className="font-heading text-2xl font-bold tabular-nums text-[color-mix(in_oklch,var(--cifra),var(--foreground)_30%)]">
+        {valor}
+      </p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  );
+}
 
 export function ImportExportDashboard({ entries }: { entries: Entry[] }) {
   const [parseResult, setParseResult] = useState<ImportParseResult | null>(null);
@@ -77,21 +95,25 @@ export function ImportExportDashboard({ entries }: { entries: Entry[] }) {
       }
       setFileName(file.name);
       const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: "array", cellDates: true });
-      const sheet = wb.Sheets.Sheet1;
-      if (!sheet) {
-        toast.error("No se encontro la hoja 'Sheet1'");
+      const wb = XLSX.read(buffer, { type: "array" });
+      const nombreHoja = wb.SheetNames.find((nombre) => wb.Sheets[nombre]?.["!ref"]);
+      if (!nombreHoja) {
+        toast.error("El archivo no tiene ninguna hoja con datos");
         return;
       }
-      const rows = XLSX.utils.sheet_to_json(sheet, {
-        header: 1,
-        raw: true,
-        defval: null,
-        range: "A:K",
-      }) as unknown[][];
+      const rows = (
+        XLSX.utils.sheet_to_json(wb.Sheets[nombreHoja], {
+          header: 1,
+          raw: true,
+          defval: null,
+        }) as unknown[][]
+      ).map((row) => row.slice(0, EXCEL_HEADERS.length));
 
-      if (!rows.length || String(rows[0]?.[0] ?? "").toLowerCase() !== "fecha") {
-        toast.error("Formato invalido: cabeceras A-K no reconocidas");
+      const erroresCabecera = validarCabeceras(rows[0]);
+      if (erroresCabecera.length > 0) {
+        toast.error("Cabeceras no reconocidas", {
+          description: erroresCabecera.slice(0, 3).join(" · "),
+        });
         return;
       }
 
@@ -143,72 +165,85 @@ export function ImportExportDashboard({ entries }: { entries: Entry[] }) {
   };
 
   return (
-    <main className="container mx-auto max-w-7xl space-y-6 px-4 py-6 md:px-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Importar / Exportar</h1>
+    <main className="container mx-auto max-w-7xl space-y-6 px-4 py-8 md:px-6">
+      <PageHeader
+        icon={FileSpreadsheet}
+        title="Importar / Exportar"
+        description="Carga tu Excel histórico o descarga tus registros."
+      />
 
-      <section className="grid gap-4 lg:grid-cols-2">
+      <section className="grid gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Importar desde Excel</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Upload className="size-5 text-brand" />
+              Importar desde Excel
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <Input
-              type="file"
-              accept=".xlsx"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) onFileSelected(file);
-              }}
-            />
-            {fileName ? (
-              <p className="text-sm text-muted-foreground">Archivo: {fileName}</p>
-            ) : null}
+          <CardContent className="space-y-5">
+            <label className="group flex cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-[color-mix(in_oklch,var(--brand),transparent_60%)] bg-[color-mix(in_oklch,var(--brand),transparent_94%)] px-6 py-10 text-center transition-colors hover:border-brand hover:bg-[color-mix(in_oklch,var(--brand),transparent_88%)]">
+              <span className="bg-brand-gradient grid size-14 place-items-center rounded-2xl text-white shadow-[0_10px_24px_-10px_var(--brand)] transition-transform group-hover:scale-105">
+                <FileSpreadsheet className="size-7" />
+              </span>
+              <span className="font-medium">
+                {fileName || "Pulsa para elegir tu archivo .xlsx"}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Columnas A-K: Fecha, Rendimiento Trabajo, hábitos, N.F. y Total
+              </span>
+              <input
+                type="file"
+                accept=".xlsx"
+                className="sr-only"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) onFileSelected(file);
+                  event.target.value = "";
+                }}
+              />
+            </label>
 
             {parseResult ? (
-              <div className="space-y-2 text-sm">
-                <p>
-                  Filas validas: <strong>{parseResult.validRows.length}</strong>
-                </p>
-                <p>
-                  Filas invalidas: <strong>{parseResult.invalidCount}</strong>
-                </p>
-                <p>
-                  Duplicadas en archivo:{" "}
-                  <strong>{parseResult.duplicateInFileCount}</strong>
-                </p>
-                <p>
-                  Ya existentes en BD: <strong>{conflictsWithDb}</strong>
-                </p>
-                <div className="flex items-center gap-2">
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Cifra label="Válidas" valor={parseResult.validRows.length} color="var(--success)" />
+                  <Cifra label="Inválidas" valor={parseResult.invalidCount} color="var(--destructive)" />
+                  <Cifra label="Duplicadas" valor={parseResult.duplicateInFileCount} color="var(--warning)" />
+                  <Cifra label="Ya en BD" valor={conflictsWithDb} color="var(--brand-3)" />
+                </div>
+                <label className="flex items-center gap-3 rounded-xl border p-3 text-sm">
                   <Switch
                     checked={overwriteExisting}
                     onCheckedChange={(v) => setOverwriteExisting(Boolean(v))}
                   />
-                  <span>Sobrescribir fechas existentes</span>
-                </div>
+                  Sobrescribir fechas que ya existen
+                </label>
                 <Button
+                  size="lg"
+                  className="h-10 w-full"
                   onClick={confirmarImportacion}
                   disabled={parseResult.validRows.length === 0 || importing}
                 >
-                  {importing ? "Importando..." : "Confirmar importación"}
+                  <Upload className="size-4" />
+                  {importing
+                    ? "Importando..."
+                    : `Importar ${parseResult.validRows.length} registros`}
                 </Button>
               </div>
             ) : null}
 
             {importSummary ? (
-              <div className="rounded-lg border p-3 text-sm">
-                <p>
-                  Importadas: <strong>{importSummary.imported}</strong>
+              <div className="space-y-3 rounded-xl border border-success/40 bg-success/10 p-4">
+                <p className="flex items-center gap-2 font-medium">
+                  <CheckCircle2 className="size-4 text-success" />
+                  Importación completada
                 </p>
-                <p>
-                  Actualizadas: <strong>{importSummary.updated}</strong>
-                </p>
-                <p>
-                  Omitidas por existentes: <strong>{importSummary.skippedExisting}</strong>
-                </p>
-                <p>
-                  Omitidas por error: <strong>{importSummary.invalid}</strong>
-                </p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Cifra label="Nuevas" valor={importSummary.imported} color="var(--success)" />
+                  <Cifra label="Actualizadas" valor={importSummary.updated} color="var(--brand)" />
+                  <Cifra label="Omitidas" valor={importSummary.skippedExisting} color="var(--warning)" />
+                  <Cifra label="Con error" valor={importSummary.invalid} color="var(--destructive)" />
+                </div>
               </div>
             ) : null}
           </CardContent>
@@ -216,7 +251,10 @@ export function ImportExportDashboard({ entries }: { entries: Entry[] }) {
 
         <Card>
           <CardHeader>
-            <CardTitle>Exportar a Excel</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Download className="size-5 text-brand" />
+              Exportar a Excel
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-muted-foreground">
@@ -246,11 +284,14 @@ export function ImportExportDashboard({ entries }: { entries: Entry[] }) {
                 />
               </div>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Registros a exportar: {filteredExportEntries.length}
-            </p>
-            <Button onClick={exportarExcel} disabled={filteredExportEntries.length === 0}>
-              Exportar a Excel
+            <Button
+              size="lg"
+              className="h-10 w-full"
+              onClick={exportarExcel}
+              disabled={filteredExportEntries.length === 0}
+            >
+              <Download className="size-4" />
+              Exportar {filteredExportEntries.length} registros
             </Button>
           </CardContent>
         </Card>
@@ -258,8 +299,8 @@ export function ImportExportDashboard({ entries }: { entries: Entry[] }) {
 
       {parseResult ? (
         <section className="space-y-3">
-          <h2 className="text-lg font-medium">Vista previa de importacion</h2>
-          <div className="max-h-[480px] overflow-auto rounded-lg border">
+          <h2 className="text-lg font-semibold">Vista previa de importación</h2>
+          <div className="max-h-[480px] overflow-auto rounded-2xl border bg-card backdrop-blur">
             <Table>
               <TableHeader>
                 <TableRow>

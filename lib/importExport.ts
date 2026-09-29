@@ -47,7 +47,46 @@ export type ImportParseResult = {
   duplicateInFileCount: number;
 };
 
+const MS_POR_DIA = 86_400_000;
+const EPOCH_EXCEL_UTC = Date.UTC(1899, 11, 30);
+
+function normalizarCabecera(raw: unknown): string {
+  return String(raw ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Comprueba las cabeceras A-K. La columna A puede venir vacia (es habitual que
+ * la celda de la fecha no tenga titulo); el resto se compara sin tildes,
+ * mayusculas, espacios ni signos de puntuacion.
+ */
+export function validarCabeceras(cabecera: unknown[] | undefined): string[] {
+  if (!cabecera) return ["El archivo no tiene filas"];
+  const errores: string[] = [];
+  const primera = normalizarCabecera(cabecera[0]);
+  if (primera !== "" && primera !== "fecha") {
+    errores.push(`A: se esperaba "Fecha" o vacía y hay "${String(cabecera[0])}"`);
+  }
+  EXCEL_HEADERS.forEach((esperada, i) => {
+    if (i === 0) return;
+    if (normalizarCabecera(cabecera[i]) !== normalizarCabecera(esperada)) {
+      const columna = String.fromCharCode(65 + i);
+      errores.push(
+        `${columna}: se esperaba "${esperada}" y hay "${String(cabecera[i] ?? "")}"`,
+      );
+    }
+  });
+  return errores;
+}
+
 function normalizarFechaExcel(raw: unknown): string | null {
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    const dt = new Date(EPOCH_EXCEL_UTC + Math.floor(raw) * MS_POR_DIA);
+    return dt.toISOString().slice(0, 10);
+  }
   if (raw instanceof Date && !Number.isNaN(raw.getTime())) {
     return format(raw, "yyyy-MM-dd");
   }
@@ -58,9 +97,11 @@ function normalizarFechaExcel(raw: unknown): string | null {
   return null;
 }
 
+/** Celda vacia = 0 (no cumplido), igual que la formula del Total en Excel. */
 function toBinaryBool(raw: unknown): boolean | null {
   if (raw === 1 || raw === "1" || raw === true) return true;
   if (raw === 0 || raw === "0" || raw === false) return false;
+  if (raw === null || raw === undefined || raw === "") return false;
   return null;
 }
 
@@ -134,7 +175,12 @@ export function parseExcelRowsToEntries(rows: unknown[][]): ImportParseResult {
         rowNumber,
         fecha,
         status: "invalid",
-        motivo: "Una o mas columnas A-J tienen formato invalido",
+        motivo:
+          rendimientoTrabajo === null
+            ? "Rendimiento Trabajo vacío o no numérico"
+            : nfValor === null
+              ? "N.F. vacío o no numérico"
+              : "Los hábitos solo admiten 0, 1 o vacío",
       });
       return;
     }
