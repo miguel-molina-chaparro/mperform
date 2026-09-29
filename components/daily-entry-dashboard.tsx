@@ -43,7 +43,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Toaster } from "@/components/ui/sonner";
 
 type EntryRow = {
   id: string;
@@ -91,17 +90,26 @@ const DEFAULT_VALUES: FormValues = {
 };
 
 const SWITCH_FIELDS: Array<{ key: keyof FormValues; label: string }> = [
-  { key: "movil17", label: "Movil - 17 horas" },
-  { key: "movilResto", label: "Movil resto del dia" },
+  { key: "movil17", label: "Móvil - 17 horas" },
+  { key: "movilResto", label: "Móvil resto de día" },
   { key: "np", label: "N. P" },
   { key: "ejercicio", label: "Ejercicio" },
-  { key: "formacion", label: "Formacion" },
+  { key: "formacion", label: "Formación" },
   { key: "leer", label: "Leer" },
   { key: "social", label: "Social" },
 ];
 
 function toDateKey(date: Date) {
   return format(date, "yyyy-MM-dd");
+}
+
+function keyToLocalDate(dateKey: string): Date {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatDateKey(dateKey: string): string {
+  return format(keyToLocalDate(dateKey), "dd/MM/yyyy");
 }
 
 function entryToFormValues(entry: EntryRow): FormValues {
@@ -205,7 +213,7 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
   };
 
   const editarEntrada = (entry: EntryRow) => {
-    setSelectedDate(new Date(entry.fecha));
+    setSelectedDate(keyToLocalDate(entry.fecha.slice(0, 10)));
     formSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -231,7 +239,7 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
         <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
           <Card>
             <CardHeader>
-              <CardTitle>Registro / Edicion diaria</CardTitle>
+              <CardTitle>Registro / Edición diaria</CardTitle>
             </CardHeader>
             <CardContent>
               <Form {...form}>
@@ -327,7 +335,7 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
                           />
                         </FormControl>
                         <FormDescription>
-                          0 = cumplido, 1 = no cumplido, 2 o mas = fallo agravado
+                          0 = cumplido, 1 = no cumplido, 2 o más = fallo agravado
                           (2→-0.2, 3→-0.3, etc.)
                         </FormDescription>
                         <FormMessage />
@@ -350,7 +358,7 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
             <CardContent>
               <p className="text-3xl font-bold">{totalEnVivo.toFixed(6)}</p>
               <p className="text-sm text-muted-foreground">
-                Recalculado segun los valores del formulario.
+                Recalculado según los valores del formulario.
               </p>
             </CardContent>
           </Card>
@@ -385,21 +393,21 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
 
         <Card>
           <CardHeader>
-            <CardTitle>Historico</CardTitle>
+            <CardTitle>Histórico</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="max-h-[520px] overflow-auto">
-              <Table>
+              <Table className="min-w-[980px]">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Fecha</TableHead>
                     <TableHead>Rendimiento Trabajo</TableHead>
-                    <TableHead>Movil-17h</TableHead>
-                    <TableHead>Movil Resto</TableHead>
+                    <TableHead>Móvil-17h</TableHead>
+                    <TableHead>Móvil Resto</TableHead>
                     <TableHead>N.F</TableHead>
                     <TableHead>N.P</TableHead>
                     <TableHead>Ejercicio</TableHead>
-                    <TableHead>Formacion</TableHead>
+                    <TableHead>Formación</TableHead>
                     <TableHead>Leer</TableHead>
                     <TableHead>Social</TableHead>
                     <TableHead>Total</TableHead>
@@ -407,73 +415,81 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {visibleEntries.map((entry) => (
-                    <TableRow key={entry.id}>
-                      <TableCell>{format(new Date(entry.fecha), "dd/MM/yyyy")}</TableCell>
-                      <TableCell>{entry.rendimientoTrabajo.toFixed(1)}</TableCell>
-                      <TableCell>
-                        <BoolBadge value={entry.movil17} />
-                      </TableCell>
-                      <TableCell>
-                        <BoolBadge value={entry.movilResto} />
-                      </TableCell>
-                      <TableCell>{entry.nf}</TableCell>
-                      <TableCell>
-                        <BoolBadge value={entry.np} />
-                      </TableCell>
-                      <TableCell>
-                        <BoolBadge value={entry.ejercicio} />
-                      </TableCell>
-                      <TableCell>
-                        <BoolBadge value={entry.formacion} />
-                      </TableCell>
-                      <TableCell>
-                        <BoolBadge value={entry.leer} />
-                      </TableCell>
-                      <TableCell>
-                        <BoolBadge value={entry.social} />
-                      </TableCell>
-                      <TableCell>{entry.total.toFixed(6)}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button
-                            size="icon-sm"
-                            variant="outline"
-                            onClick={() => editarEntrada(entry)}
-                          >
-                            <Pencil className="size-4" />
-                          </Button>
-
-                          <Dialog>
-                            <DialogTrigger
-                              render={
-                                <Button size="icon-sm" variant="destructive" />
-                              }
-                            >
-                              <Trash2 className="size-4" />
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Eliminar entrada</DialogTitle>
-                                <DialogDescription>
-                                  Esta accion no se puede deshacer.
-                                </DialogDescription>
-                              </DialogHeader>
-                              <DialogFooter>
-                                <Button
-                                  variant="destructive"
-                                  onClick={() => eliminarEntradaUI(entry.fecha)}
-                                  disabled={isPending}
-                                >
-                                  Eliminar
-                                </Button>
-                              </DialogFooter>
-                            </DialogContent>
-                          </Dialog>
-                        </div>
+                  {visibleEntries.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={12} className="py-6 text-center text-muted-foreground">
+                        Todavía no hay entradas en este rango de fechas.
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    visibleEntries.map((entry) => (
+                      <TableRow key={entry.id}>
+                        <TableCell>{formatDateKey(entry.fecha.slice(0, 10))}</TableCell>
+                        <TableCell>{entry.rendimientoTrabajo.toFixed(1)}</TableCell>
+                        <TableCell>
+                          <BoolBadge value={entry.movil17} />
+                        </TableCell>
+                        <TableCell>
+                          <BoolBadge value={entry.movilResto} />
+                        </TableCell>
+                        <TableCell>{entry.nf}</TableCell>
+                        <TableCell>
+                          <BoolBadge value={entry.np} />
+                        </TableCell>
+                        <TableCell>
+                          <BoolBadge value={entry.ejercicio} />
+                        </TableCell>
+                        <TableCell>
+                          <BoolBadge value={entry.formacion} />
+                        </TableCell>
+                        <TableCell>
+                          <BoolBadge value={entry.leer} />
+                        </TableCell>
+                        <TableCell>
+                          <BoolBadge value={entry.social} />
+                        </TableCell>
+                        <TableCell>{entry.total.toFixed(6)}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button
+                              size="icon-sm"
+                              variant="outline"
+                              onClick={() => editarEntrada(entry)}
+                            >
+                              <Pencil className="size-4" />
+                            </Button>
+
+                            <Dialog>
+                              <DialogTrigger
+                                render={
+                                  <Button size="icon-sm" variant="destructive" />
+                                }
+                              >
+                                <Trash2 className="size-4" />
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Eliminar entrada</DialogTitle>
+                                  <DialogDescription>
+                                    Esta accion no se puede deshacer.
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <DialogFooter>
+                                  <Button
+                                    variant="destructive"
+                                    onClick={() => eliminarEntradaUI(entry.fecha)}
+                                    disabled={isPending}
+                                  >
+                                    Eliminar
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -502,8 +518,6 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
           </CardContent>
         </Card>
       </section>
-
-      <Toaster />
     </main>
   );
 }
