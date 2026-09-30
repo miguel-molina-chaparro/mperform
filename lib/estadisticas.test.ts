@@ -66,8 +66,37 @@ describe("estadisticas", () => {
 
   it("calcula promedios por dia de semana", () => {
     const data = promediosPorDiaSemana(sample);
-    expect(data).toHaveLength(7);
+    expect(data.slice(0, 5).map((row) => row.dia)).toEqual([
+      "Lunes",
+      "Martes",
+      "Miércoles",
+      "Jueves",
+      "Viernes",
+    ]);
     expect(data.some((row) => row.totalPromedio > 0)).toBe(true);
+  });
+
+  it("asigna el dia de la semana en UTC y oculta el fin de semana sin datos", () => {
+    const base = sample[0];
+    const data = promediosPorDiaSemana([
+      { ...base, fecha: new Date("2026-09-28T00:00:00.000Z"), total: 60 },
+      { ...base, fecha: new Date("2026-10-02T00:00:00.000Z"), total: 80 },
+    ]);
+    expect(data).toHaveLength(5);
+    expect(data[0]).toMatchObject({ dia: "Lunes", registros: 1, totalPromedio: 60 });
+    expect(data[4]).toMatchObject({ dia: "Viernes", registros: 1, totalPromedio: 80 });
+
+    const conDomingo = promediosPorDiaSemana([
+      { ...base, fecha: "2026-03-01T00:00:00.000Z", total: 50 },
+    ]);
+    expect(conDomingo.map((row) => row.dia)).toEqual([
+      "Lunes",
+      "Martes",
+      "Miércoles",
+      "Jueves",
+      "Viernes",
+      "Domingo",
+    ]);
   });
 
   it("construye histogramas", () => {

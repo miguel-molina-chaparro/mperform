@@ -153,12 +153,17 @@ export function calcularCumplimientoAgregado(
   }));
 }
 
+/**
+ * Las fechas se guardan como medianoche UTC, asi que el dia de la semana se
+ * calcula en UTC para que no dependa de la zona horaria del navegador.
+ * Sabado y domingo solo aparecen si hay registros en esos dias.
+ */
 export function promediosPorDiaSemana(entries: DailyEntryLike[]) {
-  const labels = ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"];
+  const labels = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
   const grouped = new Map<number, { totalSum: number; rtSum: number; count: number }>();
 
   for (const entry of entries) {
-    const day = ((toDate(entry.fecha).getDay() + 6) % 7) + 1;
+    const day = ((toDate(entry.fecha).getUTCDay() + 6) % 7) + 1;
     const current = grouped.get(day) ?? { totalSum: 0, rtSum: 0, count: 0 };
     grouped.set(day, {
       totalSum: current.totalSum + entry.total,
@@ -167,15 +172,17 @@ export function promediosPorDiaSemana(entries: DailyEntryLike[]) {
     });
   }
 
-  return labels.map((label, index) => {
-    const key = index + 1;
-    const value = grouped.get(key);
-    return {
-      dia: label,
-      totalPromedio: value ? value.totalSum / value.count : 0,
-      rendimientoPromedio: value ? value.rtSum / value.count : 0,
-    };
-  });
+  return labels
+    .map((label, index) => {
+      const value = grouped.get(index + 1);
+      return {
+        dia: label,
+        registros: value?.count ?? 0,
+        totalPromedio: value ? value.totalSum / value.count : 0,
+        rendimientoPromedio: value ? value.rtSum / value.count : 0,
+      };
+    })
+    .filter((row, index) => index < 5 || row.registros > 0);
 }
 
 export function histograma(values: number[], bins = 10) {

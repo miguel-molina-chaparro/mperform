@@ -163,11 +163,13 @@ function HabitoDot({ habito, value }: { habito: HabitoMeta; value: boolean }) {
   );
 }
 
-function tonoTotal(total: number, media: number) {
-  if (media <= 0) return "bg-muted text-foreground";
-  if (total >= media * 1.1) return "bg-success/15 text-success";
-  if (total <= media * 0.9) return "bg-destructive/12 text-destructive";
-  return "bg-warning/18 text-[color-mix(in_oklch,var(--warning),black_35%)] dark:text-warning";
+function tonoTotal(total: number) {
+  const mostrado = Math.round(total * 100) / 100;
+  if (mostrado >= 70) return "bg-success/15 text-success";
+  if (mostrado >= 55) {
+    return "bg-warning/18 text-[color-mix(in_oklch,var(--warning),black_35%)] dark:text-warning";
+  }
+  return "bg-destructive/12 text-destructive";
 }
 
 export function DailyEntryDashboard({ initialEntries }: Props) {
@@ -585,7 +587,7 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
                           <span
                             className={cn(
                               "inline-block rounded-lg px-2.5 py-1 font-semibold tabular-nums",
-                              tonoTotal(entry.total, mediaTotal),
+                              tonoTotal(entry.total),
                             )}
                           >
                             {entry.total.toFixed(2)}
