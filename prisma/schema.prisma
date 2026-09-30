@@ -9,7 +9,7 @@ datasource db {
 
 model DailyEntry {
   id                 String   @id @default(cuid())
-  fecha              DateTime @unique @db.Date
+  fecha              DateTime @db.Date
   rendimientoTrabajo Float
   movil17            Boolean
   movilResto         Boolean
@@ -22,4 +22,6 @@ model DailyEntry {
   total              Float
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+
+  @@index([fecha])
 }

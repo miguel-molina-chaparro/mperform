@@ -46,19 +46,10 @@ export async function obtenerEntradas() {
   );
 }
 
-export async function obtenerEntradaPorFecha(fecha: string | Date) {
-  return prisma.dailyEntry.findUnique({
-    where: {
-      fecha: normalizarFechaAUTC(fecha),
-    },
-  });
-}
-
-export async function guardarEntrada(datos: z.input<typeof entradaSchema>) {
+function prepararEntrada(datos: z.input<typeof entradaSchema>) {
   const parsed = entradaSchema.parse(datos);
-  const fechaNormalizada = normalizarFechaAUTC(parsed.fecha);
-
-  const valores = {
+  return {
+    fecha: normalizarFechaAUTC(parsed.fecha),
     rendimientoTrabajo: parsed.rendimientoTrabajo,
     movil17: parsed.movil17,
     movilResto: parsed.movilResto,
@@ -70,20 +61,27 @@ export async function guardarEntrada(datos: z.input<typeof entradaSchema>) {
     nf: parsed.nf,
     total: calcularTotal({ ...parsed, nfValor: nfInputAValor(parsed.nf) }),
   };
-
-  return prisma.dailyEntry.upsert({
-    where: {
-      fecha: fechaNormalizada,
-    },
-    update: valores,
-    create: { fecha: fechaNormalizada, ...valores },
-  });
 }
 
-export async function eliminarEntrada(fecha: string | Date) {
-  return prisma.dailyEntry.delete({
-    where: {
-      fecha: normalizarFechaAUTC(fecha),
-    },
+/** Con `id` actualiza ese registro (incluida la fecha); sin `id` crea uno nuevo. */
+export async function guardarEntrada(datos: z.input<typeof entradaSchema>, id?: string) {
+  const valores = prepararEntrada(datos);
+  if (id) {
+    return prisma.dailyEntry.update({ where: { id }, data: valores });
+  }
+  return prisma.dailyEntry.create({ data: valores });
+}
+
+/** Actualiza todos los registros de esa fecha. Devuelve cuantos se han modificado. */
+export async function sobrescribirEntradasDeFecha(datos: z.input<typeof entradaSchema>) {
+  const valores = prepararEntrada(datos);
+  const { count } = await prisma.dailyEntry.updateMany({
+    where: { fecha: valores.fecha },
+    data: valores,
   });
+  return count;
+}
+
+export async function eliminarEntrada(id: string) {
+  return prisma.dailyEntry.delete({ where: { id } });
 }

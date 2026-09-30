@@ -21,3 +21,23 @@ export function normalizarFechaAUTC(fecha: string | Date): Date {
   if (Number.isNaN(fecha.getTime())) throw new Error("Fecha invalida");
   return new Date(Date.UTC(fecha.getUTCFullYear(), fecha.getUTCMonth(), fecha.getUTCDate()));
 }
+
+/** "Sábado" o "Domingo" si la fecha (yyyy-MM-dd...) cae en fin de semana; si no, null. */
+export function diaFinDeSemana(fecha: string): "Sábado" | "Domingo" | null {
+  const dia = normalizarFechaAUTC(fecha).getUTCDay();
+  if (dia === 6) return "Sábado";
+  if (dia === 0) return "Domingo";
+  return null;
+}
+
+/** Claves yyyy-MM-dd que aparecen en mas de un registro. */
+export function fechasRepetidas(fechas: string[]): Set<string> {
+  const vistas = new Set<string>();
+  const repetidas = new Set<string>();
+  for (const fecha of fechas) {
+    const clave = fecha.slice(0, 10);
+    if (vistas.has(clave)) repetidas.add(clave);
+    vistas.add(clave);
+  }
+  return repetidas;
+}

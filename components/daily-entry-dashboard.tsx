@@ -1,22 +1,27 @@
 "use client";
 
 import {
-  useEffect,
   useMemo,
   useRef,
   useState,
   useTransition,
   type CSSProperties,
+  type ReactNode,
 } from "react";
 import { format } from "date-fns";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
+  AlertTriangle,
   Briefcase,
   CalendarDays,
   CalendarIcon,
+  CalendarX2,
+  CopyPlus,
   Flame,
   History,
+  type LucideIcon,
   Pencil,
+  Plus,
   Save,
   Trash2,
 } from "lucide-react";
@@ -26,6 +31,7 @@ import { z } from "zod";
 
 import { eliminarEntradaAction, guardarEntradaAction } from "@/app/actions";
 import { calcularTotal, nfInputAValor } from "@/lib/calculos";
+import { diaFinDeSemana, fechasRepetidas } from "@/lib/fechas";
 import { reportarErrorCliente } from "@/lib/reportar-error-cliente";
 import { cn } from "@/lib/utils";
 import { HABITOS, type HabitoMeta } from "@/components/habitos";
@@ -163,6 +169,70 @@ function HabitoDot({ habito, value }: { habito: HabitoMeta; value: boolean }) {
   );
 }
 
+function Aviso({
+  tono,
+  icon: Icon,
+  children,
+}: {
+  tono: "warning" | "info";
+  icon: LucideIcon;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      role="status"
+      className={cn(
+        "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border px-3 py-2 text-sm",
+        tono === "warning"
+          ? "border-warning/50 bg-warning/12"
+          : "border-brand-3/50 bg-brand-3/12",
+      )}
+    >
+      <Icon
+        className={cn(
+          "size-4 shrink-0",
+          tono === "warning"
+            ? "text-[color-mix(in_oklch,var(--warning),black_30%)] dark:text-warning"
+            : "text-[color-mix(in_oklch,var(--brand-3),black_30%)] dark:text-brand-3",
+        )}
+      />
+      {children}
+    </div>
+  );
+}
+
+function AvisosFila({
+  repetida,
+  finDeSemana,
+}: {
+  repetida: boolean;
+  finDeSemana: "Sábado" | "Domingo" | null;
+}) {
+  if (!repetida && !finDeSemana) return null;
+  return (
+    <span className="flex flex-wrap gap-1">
+      {repetida ? (
+        <span
+          title="Hay más de un registro con esta fecha"
+          className="inline-flex items-center gap-1 rounded-md bg-warning/18 px-1.5 py-0.5 text-[11px] font-semibold text-[color-mix(in_oklch,var(--warning),black_40%)] dark:text-warning"
+        >
+          <CopyPlus className="size-3" />
+          Repetida
+        </span>
+      ) : null}
+      {finDeSemana ? (
+        <span
+          title="Registro en fin de semana"
+          className="inline-flex items-center gap-1 rounded-md bg-brand-3/18 px-1.5 py-0.5 text-[11px] font-semibold text-[color-mix(in_oklch,var(--brand-3),black_40%)] dark:text-brand-3"
+        >
+          <CalendarX2 className="size-3" />
+          {finDeSemana}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function tonoTotal(total: number) {
   const mostrado = Math.round(total * 100) / 100;
   if (mostrado >= 70) return "bg-success/15 text-success";
@@ -174,27 +244,45 @@ function tonoTotal(total: number) {
 
 export function DailyEntryDashboard({ initialEntries }: Props) {
   const [entries, setEntries] = useState(initialEntries);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+  // Si hoy ya tiene registro se abre en modo edicion; si no, en modo nuevo.
+  const [editingId, setEditingId] = useState<string | null>(
+    () => initialEntries.find((entry) => entry.fecha.slice(0, 10) === toDateKey(new Date()))?.id ?? null,
+  );
   const [isPending, startTransition] = useTransition();
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [soloAvisos, setSoloAvisos] = useState(false);
   const [page, setPage] = useState(1);
   const formSectionRef = useRef<HTMLDivElement>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: DEFAULT_VALUES,
+    defaultValues: (() => {
+      const inicial = initialEntries.find((entry) => entry.id === editingId);
+      return inicial ? entryToFormValues(inicial) : DEFAULT_VALUES;
+    })(),
   });
 
   const selectedKey = toDateKey(selectedDate);
-  const selectedEntry = useMemo(
-    () => entries.find((entry) => entry.fecha.slice(0, 10) === selectedKey),
-    [entries, selectedKey],
+  const editingEntry = entries.find((entry) => entry.id === editingId);
+  const otrosEnFecha = entries.filter(
+    (entry) => entry.fecha.slice(0, 10) === selectedKey && entry.id !== editingId,
   );
+  const finDeSemanaSeleccionado = diaFinDeSemana(selectedKey);
 
-  useEffect(() => {
-    form.reset(selectedEntry ? entryToFormValues(selectedEntry) : DEFAULT_VALUES);
-  }, [form, selectedEntry]);
+  const repetidas = useMemo(
+    () => fechasRepetidas(entries.map((entry) => entry.fecha)),
+    [entries],
+  );
+  const avisosDe = (entry: EntryRow) => {
+    const clave = entry.fecha.slice(0, 10);
+    return { repetida: repetidas.has(clave), finDeSemana: diaFinDeSemana(clave) };
+  };
+  const totalAvisos = entries.filter((entry) => {
+    const avisos = avisosDe(entry);
+    return avisos.repetida || avisos.finDeSemana;
+  }).length;
 
   const watched = useWatch({ control: form.control });
   const totalEnVivo = useMemo(() => {
@@ -231,9 +319,10 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
       const key = entry.fecha.slice(0, 10);
       if (fromDate && key < fromDate) return false;
       if (toDate && key > toDate) return false;
+      if (soloAvisos && !repetidas.has(key) && !diaFinDeSemana(key)) return false;
       return true;
     });
-  }, [entries, fromDate, toDate]);
+  }, [entries, fromDate, toDate, soloAvisos, repetidas]);
 
   const pageSize = 25;
   const totalPages = Math.max(1, Math.ceil(filteredEntries.length / pageSize));
@@ -245,10 +334,10 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
   const onSubmit = (values: FormValues) => {
     startTransition(async () => {
       try {
-        const result = await guardarEntradaAction({
-          fecha: selectedKey,
-          ...values,
-        });
+        const result = await guardarEntradaAction(
+          { fecha: selectedKey, ...values },
+          editingId ?? undefined,
+        );
         if (!result.ok) {
           toast.error(result.message);
           return;
@@ -256,12 +345,14 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
 
         const saved = result.data;
         setEntries((prev) => {
-          const next = prev.filter((entry) => entry.fecha !== saved.fecha);
+          const next = prev.filter((entry) => entry.id !== saved.id);
           next.push(saved);
           next.sort((a, b) => b.fecha.localeCompare(a.fecha));
           return next;
         });
-        toast.success("Entrada guardada");
+        // Tras crear, los siguientes guardados editan ese mismo registro en vez de duplicarlo.
+        setEditingId(saved.id);
+        toast.success(editingId ? "Registro actualizado" : "Registro creado");
       } catch (error) {
         reportarErrorCliente("accion.guardarEntrada", error, { fecha: selectedKey });
         toast.error("No se pudo contactar con el servidor");
@@ -270,22 +361,31 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
   };
 
   const editarEntrada = (entry: EntryRow) => {
+    setEditingId(entry.id);
     setSelectedDate(keyToLocalDate(entry.fecha.slice(0, 10)));
+    form.reset(entryToFormValues(entry));
     formSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
-  const eliminarEntradaUI = (fecha: string) => {
+  const nuevoRegistro = () => {
+    setEditingId(null);
+    setSelectedDate(new Date());
+    form.reset(DEFAULT_VALUES);
+  };
+
+  const eliminarEntradaUI = (entry: EntryRow) => {
     startTransition(async () => {
       try {
-        const result = await eliminarEntradaAction(fecha.slice(0, 10));
+        const result = await eliminarEntradaAction(entry.id);
         if (!result.ok) {
           toast.error(result.message);
           return;
         }
-        setEntries((prev) => prev.filter((entry) => entry.fecha !== fecha));
-        toast.success("Entrada eliminada");
+        setEntries((prev) => prev.filter((item) => item.id !== entry.id));
+        if (entry.id === editingId) nuevoRegistro();
+        toast.success("Registro eliminado");
       } catch (error) {
-        reportarErrorCliente("accion.eliminarEntrada", error, { fecha });
+        reportarErrorCliente("accion.eliminarEntrada", error, { id: entry.id });
         toast.error("No se pudo contactar con el servidor");
       }
     });
@@ -302,15 +402,21 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
 
         <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
               <CardTitle className="flex items-center gap-2">
-                {selectedEntry ? "Editar registro" : "Nuevo registro"}
-                {selectedEntry ? (
+                {editingEntry ? "Editar registro" : "Nuevo registro"}
+                {editingEntry ? (
                   <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
-                    Ya existe
+                    del {formatDateKey(editingEntry.fecha.slice(0, 10))}
                   </span>
                 ) : null}
               </CardTitle>
+              {editingEntry ? (
+                <Button type="button" variant="outline" size="sm" onClick={nuevoRegistro}>
+                  <Plus className="size-4" />
+                  Nuevo registro
+                </Button>
+              ) : null}
             </CardHeader>
             <CardContent>
               <Form {...form}>
@@ -338,6 +444,7 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
                           <Calendar
                             mode="single"
                             selected={selectedDate}
+                            defaultMonth={selectedDate}
                             onSelect={(date) => {
                               if (date) setSelectedDate(date);
                             }}
@@ -373,6 +480,34 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
                       )}
                     />
                   </div>
+
+                  {otrosEnFecha.length > 0 || finDeSemanaSeleccionado ? (
+                    <div className="space-y-2">
+                      {otrosEnFecha.length > 0 ? (
+                        <Aviso tono="warning" icon={CopyPlus}>
+                          <span>
+                            Ya hay {otrosEnFecha.length === 1 ? "otro registro" : `${otrosEnFecha.length} registros`}{" "}
+                            el {format(selectedDate, "dd/MM/yyyy")}. Si guardas, quedará la fecha
+                            repetida.
+                          </span>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="xs"
+                            onClick={() => editarEntrada(otrosEnFecha[0])}
+                          >
+                            Editar ese registro
+                          </Button>
+                        </Aviso>
+                      ) : null}
+                      {finDeSemanaSeleccionado ? (
+                        <Aviso tono="info" icon={CalendarX2}>
+                          El {format(selectedDate, "dd/MM/yyyy")} es{" "}
+                          {finDeSemanaSeleccionado.toLowerCase()}.
+                        </Aviso>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   <div className="space-y-3">
                     <p className="text-sm font-medium">Hábitos</p>
@@ -516,7 +651,20 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
               <History className="size-5 text-brand" />
               Histórico
             </CardTitle>
-            <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              {totalAvisos > 0 || soloAvisos ? (
+                <Button
+                  type="button"
+                  variant={soloAvisos ? "default" : "outline"}
+                  onClick={() => {
+                    setSoloAvisos((prev) => !prev);
+                    setPage(1);
+                  }}
+                >
+                  <AlertTriangle className="size-4" />
+                  Solo con avisos ({totalAvisos})
+                </Button>
+              ) : null}
               <div className="grid gap-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Desde</label>
                 <Input
@@ -570,9 +718,18 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
                     </TableRow>
                   ) : (
                     visibleEntries.map((entry) => (
-                      <TableRow key={entry.id}>
+                      <TableRow
+                        key={entry.id}
+                        data-state={entry.id === editingId ? "selected" : undefined}
+                        className={cn(
+                          entry.id === editingId && "bg-accent/60 hover:bg-accent/70",
+                        )}
+                      >
                         <TableCell className="font-medium tabular-nums">
-                          {formatDateKey(entry.fecha.slice(0, 10))}
+                          <div className="flex flex-col gap-1">
+                            {formatDateKey(entry.fecha.slice(0, 10))}
+                            <AvisosFila {...avisosDe(entry)} />
+                          </div>
                         </TableCell>
                         <TableCell className="tabular-nums">
                           {entry.rendimientoTrabajo.toFixed(1)}
@@ -621,14 +778,15 @@ export function DailyEntryDashboard({ initialEntries }: Props) {
                                   <DialogTitle>Eliminar entrada</DialogTitle>
                                   <DialogDescription>
                                     Se borrará el registro del{" "}
-                                    {formatDateKey(entry.fecha.slice(0, 10))}. Esta acción
-                                    no se puede deshacer.
+                                    {formatDateKey(entry.fecha.slice(0, 10))} (total{" "}
+                                    {entry.total.toFixed(2)}). Esta acción no se puede
+                                    deshacer.
                                   </DialogDescription>
                                 </DialogHeader>
                                 <DialogFooter>
                                   <Button
                                     variant="destructive"
-                                    onClick={() => eliminarEntradaUI(entry.fecha)}
+                                    onClick={() => eliminarEntradaUI(entry)}
                                     disabled={isPending}
                                   >
                                     Eliminar

@@ -12,7 +12,7 @@ import {
   crearSesionCookie,
   requireSession,
 } from "@/lib/auth-session";
-import { eliminarEntrada, guardarEntrada } from "@/lib/data";
+import { eliminarEntrada, guardarEntrada, sobrescribirEntradasDeFecha } from "@/lib/data";
 import type { ImportEntryInput } from "@/lib/importExport";
 import { log, medir, serializarError } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
@@ -141,14 +141,22 @@ export async function logoutAction() {
   log.info("logout.ok", { ip: await ipCliente() });
 }
 
-export async function guardarEntradaAction(input: GuardarEntradaInput) {
+export async function guardarEntradaAction(input: GuardarEntradaInput, id?: string) {
   try {
     await requireSession();
-    const entry = await medir("bd.guardarEntrada", () => guardarEntrada(input), {
+    if (id !== undefined && (typeof id !== "string" || id.length === 0)) {
+      return { ok: false as const, message: "Identificador de registro no válido." };
+    }
+    const entry = await medir("bd.guardarEntrada", () => guardarEntrada(input, id), {
       fecha: input.fecha,
+      id,
     });
     revalidarTodo();
-    log.info("entrada.guardada", { fecha: input.fecha, total: entry.total });
+    log.info(id ? "entrada.actualizada" : "entrada.creada", {
+      id: entry.id,
+      fecha: input.fecha,
+      total: entry.total,
+    });
     return {
       ok: true as const,
       data: { ...entry, fecha: entry.fecha.toISOString() },
@@ -158,12 +166,15 @@ export async function guardarEntradaAction(input: GuardarEntradaInput) {
   }
 }
 
-export async function eliminarEntradaAction(fecha: string): Promise<ActionResult> {
+export async function eliminarEntradaAction(id: string): Promise<ActionResult> {
   try {
     await requireSession();
-    await medir("bd.eliminarEntrada", () => eliminarEntrada(fecha), { fecha });
+    if (typeof id !== "string" || id.length === 0) {
+      return { ok: false, message: "Identificador de registro no válido." };
+    }
+    const entry = await medir("bd.eliminarEntrada", () => eliminarEntrada(id), { id });
     revalidarTodo();
-    log.info("entrada.eliminada", { fecha });
+    log.info("entrada.eliminada", { id, fecha: entry.fecha.toISOString().slice(0, 10) });
     return { ok: true, data: undefined };
   } catch (error) {
     return { ok: false, message: mensajeDeError(error, "eliminarEntrada") };
@@ -222,9 +233,13 @@ export async function importarEntradasAction(
           skippedExisting += 1;
           continue;
         }
-        await guardarEntrada(row);
-        imported += 1;
-        if (exists) updated += 1;
+        if (exists) {
+          await sobrescribirEntradasDeFecha(row);
+          updated += 1;
+        } else {
+          await guardarEntrada(row);
+          imported += 1;
+        }
       } catch (error) {
         invalid += 1;
         if (muestraErrores.length < 5) {
